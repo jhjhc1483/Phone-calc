@@ -1,30 +1,28 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronRight, Smartphone, RefreshCcw, CheckCircle2, Plus, Trash2, Info, X } from 'lucide-react';
+import { ChevronRight, Smartphone, RefreshCcw, CheckCircle2, Plus, Trash2 } from 'lucide-react';
 
 export default function PhoneCalculator() {
   const [step, setStep] = useState(0);
 
-  // 1. 자급제 단말기 최종 결제 금액
-  const [unlockedPrice, setUnlockedPrice] = useState<number | ''>(1150000);
+  // 1. 단말기 기본 정보 & 자급제 할인
+  const [phonePrice, setPhonePrice] = useState<number | ''>(1250000);
+  const [unlockedDiscount, setUnlockedDiscount] = useState<number | ''>(0);
 
   // 2. 자급제 통신비 상태
   const [mvnoPlan, setMvnoPlan] = useState<number | ''>(33000);
-  const [isUnlockedContract, setIsUnlockedContract] = useState(false);
+  const [isUnlockedContract, setIsUnlockedContract] = useState(false); // 자급제 선택약정 여부
 
   // 3. 통신사 약정 상태
-  const [carrierPrice, setCarrierPrice] = useState<number | ''>(750000); // 할부원금(최종 구매가)
+  const [subsidy, setSubsidy] = useState<number | ''>(500000);
   const [highPlan, setHighPlan] = useState<number | ''>(99000);
   const [highPlanMonths, setHighPlanMonths] = useState<number | ''>(6);
   const [normalPlan, setNormalPlan] = useState<number | ''>(55000);
-  const [isCarrierContract, setIsCarrierContract] = useState(false);
+  const [isCarrierContract, setIsCarrierContract] = useState(false); // 통신사 선택약정 여부
   
   // 부가서비스 상태
   const [extraServices, setExtraServices] = useState<{ id: number; price: number | ''; months: number | '' }[]>([]);
-
-  // 요금제 툴팁(팝업) 띄우기 상태
-  const [showPlanInfo, setShowPlanInfo] = useState(false);
 
   const addExtraService = () => {
     setExtraServices([...extraServices, { id: Date.now(), price: '', months: '' }]);
@@ -38,6 +36,7 @@ export default function PhoneCalculator() {
     setExtraServices(extraServices.filter(s => s.id !== id));
   };
 
+  // 한글 금액 변환 유틸리티
   const formatKorean = (num: number | '') => {
     if (!num) return '';
     const n = Number(num);
@@ -55,39 +54,42 @@ export default function PhoneCalculator() {
 
   const formatMoney = (amount: number) => amount.toLocaleString() + '원';
 
-  // 계산 로직
+  // 계산 로직 (24개월 기준)
   const calculateResult = () => {
-    const safeUnlockedPrice = Number(unlockedPrice) || 0;
+    const safePhonePrice = Number(phonePrice) || 0;
+    const safeUnlockedDiscount = Number(unlockedDiscount) || 0;
     const safeMvnoPlan = Number(mvnoPlan) || 0;
-    const safeCarrierPrice = Number(carrierPrice) || 0;
+    const safeSubsidy = Number(subsidy) || 0;
     const safeHighPlan = Number(highPlan) || 0;
     const safeHighPlanMonths = Number(highPlanMonths) || 0;
     const safeNormalPlan = Number(normalPlan) || 0;
 
+    // 선택약정(25% 할인) 적용
     const actualMvnoPlan = isUnlockedContract ? safeMvnoPlan * 0.75 : safeMvnoPlan;
     const actualHighPlan = isCarrierContract ? safeHighPlan * 0.75 : safeHighPlan;
     const actualNormalPlan = isCarrierContract ? safeNormalPlan * 0.75 : safeNormalPlan;
 
     // 1. 자급제 총 비용
-    const unlockedTotal = safeUnlockedPrice + (actualMvnoPlan * 24);
+    const actualUnlockedPrice = Math.max(0, safePhonePrice - safeUnlockedDiscount);
+    const unlockedTotal = actualUnlockedPrice + actualMvnoPlan * 24;
 
     // 2. 통신사 총 비용
-    const carrierInterest = safeCarrierPrice * 0.059; // 24개월 할부 이자 (약 5.9%)
+    const carrierDevicePrice = Math.max(0, safePhonePrice - safeSubsidy);
+    const carrierInterest = carrierDevicePrice * 0.059; // 24개월 할부 이자 (약 5.9%)
     const carrierPlanCost = (actualHighPlan * safeHighPlanMonths) + (actualNormalPlan * Math.max(0, 24 - safeHighPlanMonths));
     
     const extraServicesTotal = extraServices.reduce((acc, curr) => {
       return acc + (Number(curr.price) || 0) * (Number(curr.months) || 0);
     }, 0);
 
-    const carrierTotal = safeCarrierPrice + carrierInterest + carrierPlanCost + extraServicesTotal;
+    const carrierTotal = carrierDevicePrice + carrierInterest + carrierPlanCost + extraServicesTotal;
 
     const diff = Math.abs(unlockedTotal - carrierTotal);
     const isUnlockedBetter = unlockedTotal < carrierTotal;
 
     return { 
       unlockedTotal, carrierTotal, diff, isUnlockedBetter, 
-      actualUnlockedPrice: safeUnlockedPrice, carrierDevicePrice: safeCarrierPrice, 
-      carrierInterest, carrierPlanCost, extraServicesTotal,
+      actualUnlockedPrice, carrierDevicePrice, carrierInterest, carrierPlanCost, extraServicesTotal,
       actualMvnoPlan, actualHighPlan, actualNormalPlan
     };
   };
@@ -98,53 +100,10 @@ export default function PhoneCalculator() {
     actualMvnoPlan, actualHighPlan, actualNormalPlan
   } = calculateResult();
 
-  // 요금제 안내 팝업 컴포넌트
-  const PlanInfoModal = () => {
-    if (!showPlanInfo) return null;
-    return (
-      <div className="absolute top-0 left-0 w-full h-full bg-black bg-opacity-40 flex justify-center items-center z-50 p-4 animate-fade-in">
-        <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="font-bold text-lg text-gray-800">📊 통신사별 요금제 시세</h3>
-            <button onClick={() => setShowPlanInfo(false)} className="text-gray-400 hover:text-gray-600">
-              <X className="w-6 h-6" />
-            </button>
-          </div>
-          <div className="space-y-4 text-sm">
-            <div className="bg-blue-50 p-3 rounded-xl border border-blue-100">
-              <span className="font-bold text-blue-800 block mb-1">SKT / KT / LG U+ (5G 기준)</span>
-              <ul className="text-gray-600 space-y-1">
-                <li>• <span className="font-medium text-gray-800">프리미엄 (무제한):</span> 약 89,000 ~ 109,000원</li>
-                <li>• <span className="font-medium text-gray-800">스탠다드 (100GB+):</span> 약 69,000 ~ 75,000원</li>
-                <li>• <span className="font-medium text-gray-800">베이직 (10GB 내외):</span> 약 45,000 ~ 55,000원</li>
-              </ul>
-            </div>
-            <div className="bg-green-50 p-3 rounded-xl border border-green-100">
-              <span className="font-bold text-green-800 block mb-1">알뜰폰 (MVNO)</span>
-              <ul className="text-gray-600 space-y-1">
-                <li>• <span className="font-medium text-gray-800">데이터 무제한:</span> 약 25,000 ~ 35,000원</li>
-                <li>• <span className="font-medium text-gray-800">실속형 (10GB+):</span> 약 10,000 ~ 15,000원</li>
-              </ul>
-            </div>
-          </div>
-          <button 
-            onClick={() => setShowPlanInfo(false)}
-            className="w-full mt-6 bg-gray-900 text-white font-bold py-3 rounded-xl"
-          >
-            닫기
-          </button>
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className="min-h-screen bg-gray-50 flex justify-center items-center p-4 font-sans text-gray-900">
       <div className="w-full max-w-md bg-white rounded-3xl shadow-lg min-h-[600px] flex flex-col relative overflow-hidden">
         
-        {/* 요금제 팝업 (필요 시 렌더링) */}
-        <PlanInfoModal />
-
         {/* Step 0: 시작 화면 */}
         {step === 0 && (
           <div className="p-8 flex flex-col h-full justify-between animate-fade-in flex-1">
@@ -169,25 +128,41 @@ export default function PhoneCalculator() {
           </div>
         )}
 
-        {/* Step 1: 자급제 기기값 입력 */}
+        {/* Step 1: 기기값 & 자급제 할인 입력 */}
         {step === 1 && (
           <div className="p-8 flex flex-col h-full justify-between animate-fade-in flex-1">
             <div>
-              <h2 className="text-2xl font-bold mb-6">자급제로 살 때의<br />기계값은 얼마인가요?</h2>
-              <p className="text-gray-500 mb-8">할인이 모두 적용된 최종 결제 금액을 적어주세요.</p>
+              <h2 className="text-2xl font-bold mb-6">사고 싶은 스마트폰의<br />기계값은 얼마인가요?</h2>
               
-              <div>
+              <div className="mb-8">
+                <label className="text-sm font-bold text-gray-600 mb-1 block">출고가 (정가)</label>
                 <div className="relative">
                   <input
                     type="number"
-                    value={unlockedPrice}
-                    onChange={(e) => setUnlockedPrice(e.target.value ? Number(e.target.value) : '')}
-                    className="w-full text-3xl font-bold border-b-2 border-blue-500 pb-2 focus:outline-none bg-transparent"
-                    placeholder="예: 1150000"
+                    value={phonePrice}
+                    onChange={(e) => setPhonePrice(e.target.value ? Number(e.target.value) : '')}
+                    className="w-full text-2xl font-bold border-b-2 border-blue-500 pb-2 focus:outline-none bg-transparent"
+                    placeholder="예: 1250000"
                   />
                   <span className="absolute right-0 bottom-3 text-xl font-bold text-gray-500">원</span>
                 </div>
-                <div className="text-blue-500 font-medium text-base mt-2">{formatKorean(unlockedPrice)}</div>
+                <div className="text-blue-500 font-medium text-sm mt-2">{formatKorean(phonePrice)}</div>
+              </div>
+
+              <div>
+                <label className="text-sm font-bold text-gray-600 mb-1 block">자급제 구매 시 할인 금액 (선택)</label>
+                <p className="text-xs text-gray-400 mb-2">오픈마켓 쿠폰, 카드 즉시할인 등</p>
+                <div className="relative">
+                  <input
+                    type="number"
+                    value={unlockedDiscount}
+                    onChange={(e) => setUnlockedDiscount(e.target.value ? Number(e.target.value) : '')}
+                    className="w-full text-xl font-bold border-b-2 border-gray-300 focus:border-blue-500 pb-2 focus:outline-none bg-transparent"
+                    placeholder="예: 100000"
+                  />
+                  <span className="absolute right-0 bottom-3 text-lg font-bold text-gray-500">원</span>
+                </div>
+                <div className="text-blue-500 font-medium text-sm mt-2">{formatKorean(unlockedDiscount)}</div>
               </div>
             </div>
 
@@ -204,12 +179,7 @@ export default function PhoneCalculator() {
         {step === 2 && (
           <div className="p-8 flex flex-col h-full justify-between animate-fade-in flex-1">
             <div>
-              <div className="flex justify-between items-start mb-2">
-                <h2 className="text-2xl font-bold">자급제를 산다면<br />한 달 통신비는 얼마인가요?</h2>
-                <button onClick={() => setShowPlanInfo(true)} className="flex items-center gap-1 text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1.5 rounded-lg shrink-0">
-                  <Info className="w-4 h-4" /> 요금제 참고
-                </button>
-              </div>
+              <h2 className="text-2xl font-bold mb-2">자급제를 산다면<br />한 달 통신비는 얼마인가요?</h2>
               <p className="text-gray-500 mb-8">기존 통신사를 유지하거나 알뜰폰 요금을 적어주세요.</p>
               
               <div className="relative">
@@ -224,7 +194,8 @@ export default function PhoneCalculator() {
               </div>
               <div className="text-blue-500 font-medium text-sm mt-2">{formatKorean(mvnoPlan)}</div>
 
-              <label className="flex items-center gap-3 mt-8 p-4 bg-gray-50 rounded-xl cursor-pointer hover:bg-gray-100 transition-colors border border-gray-200">
+              {/* 자급제 선택약정 체크박스 */}
+              <label className="flex items-center gap-3 mt-6 p-4 bg-gray-50 rounded-xl cursor-pointer hover:bg-gray-100 transition-colors border border-gray-200">
                 <div className="relative flex items-center">
                   <input
                     type="checkbox"
@@ -259,20 +230,20 @@ export default function PhoneCalculator() {
             
             <div className="space-y-6 flex-1">
               <div>
-                <label className="text-sm font-bold text-gray-600 mb-1 block">통신사 개통 시 기기값 (할부원금)</label>
+                <label className="text-sm font-bold text-gray-600 mb-1 block">기기값에서 할인받은 금액 (공시/매장지원금 등)</label>
                 <div className="relative">
                   <input
                     type="number"
-                    value={carrierPrice}
-                    onChange={(e) => setCarrierPrice(e.target.value ? Number(e.target.value) : '')}
+                    value={subsidy}
+                    onChange={(e) => setSubsidy(e.target.value ? Number(e.target.value) : '')}
                     className="w-full text-xl font-bold bg-gray-100 p-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="최종 구매가 입력"
                   />
                   <span className="absolute right-4 top-4 text-lg text-gray-500 font-bold">원</span>
                 </div>
-                <div className="text-blue-500 font-medium text-sm mt-1 px-1">{formatKorean(carrierPrice)}</div>
+                <div className="text-blue-500 font-medium text-sm mt-1 px-1">{formatKorean(subsidy)}</div>
               </div>
 
+              {/* 통신사 선택약정 체크박스 */}
               <label className="flex items-center gap-3 p-4 bg-gray-50 rounded-xl cursor-pointer hover:bg-gray-100 transition-colors border border-gray-200">
                 <div className="relative flex items-center">
                   <input
@@ -283,17 +254,14 @@ export default function PhoneCalculator() {
                   />
                 </div>
                 <div className="flex flex-col">
-                  <span className="font-bold text-gray-700">요금할인(선택약정) 개통하기</span>
+                  <span className="font-bold text-gray-700">선택약정 가능 여부</span>
                   <span className="text-xs text-gray-500 mt-1">입력된 아래 요금제에서 각각 25%가 자동 할인됩니다.</span>
                 </div>
               </label>
 
-              <div className="flex gap-4 items-end">
+              <div className="flex gap-4">
                 <div className="flex-1">
-                  
-                  <div className="flex justify-between items-center mb-1">               
-                    <label className="text-sm font-bold text-gray-600 block">강제 고가 요금제</label>
-                  </div>
+                  <label className="text-sm font-bold text-gray-600 mb-1 block">강제 고가 요금제</label>
                   <input
                     type="number"
                     value={highPlan}
@@ -304,10 +272,7 @@ export default function PhoneCalculator() {
                     {isCarrierContract ? `할인됨: ${formatKorean(actualHighPlan)}` : formatKorean(highPlan)}
                   </div>
                 </div>
-                <div className="w-25 h-33">
-                <button onClick={() => setShowPlanInfo(true)} className="flex items-center gap-1 text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1.5 rounded-lg shrink-0">
-                  <Info className="w-4 h-4" /> 요금제 참고
-                </button>  
+                <div className="w-24">
                   <label className="text-sm font-bold text-gray-600 mb-1 block">유지 개월</label>
                   <input
                     type="number"
@@ -335,6 +300,7 @@ export default function PhoneCalculator() {
                 </div>
               </div>
 
+              {/* 부가서비스 동적 추가 영역 */}
               <div className="pt-4 border-t border-gray-200">
                 <div className="flex justify-between items-center mb-3">
                   <label className="text-sm font-bold text-gray-600">강제 가입 부가서비스</label>
@@ -348,7 +314,7 @@ export default function PhoneCalculator() {
                 )}
 
                 <div className="space-y-3">
-                  {extraServices.map((service) => (
+                  {extraServices.map((service, index) => (
                     <div key={service.id} className="flex gap-2 items-start bg-gray-50 p-3 rounded-xl border border-gray-200 animate-fade-in">
                       <div className="flex-1">
                         <input
@@ -409,9 +375,9 @@ export default function PhoneCalculator() {
                 </div>
                 <div className="text-2xl font-bold">{formatMoney(unlockedTotal)}</div>
                 <div className="text-sm text-gray-500 mt-3 space-y-1">
-                  <div>단말기 구매가 {formatMoney(actualUnlockedPrice)}</div>
+                  <div>할인된 기기값 {formatMoney(actualUnlockedPrice)}</div>
                   <div>
-                    + 24개월 통신비 {formatMoney(actualMvnoPlan * 24)} 
+                    + 통신비 {formatMoney(actualMvnoPlan * 24)} 
                     {isUnlockedContract && <span className="text-blue-500 text-xs ml-1">(선택약정 적용)</span>}
                   </div>
                 </div>
@@ -425,9 +391,8 @@ export default function PhoneCalculator() {
                 </div>
                 <div className="text-2xl font-bold">{formatMoney(carrierTotal)}</div>
                 <div className="text-sm text-gray-500 mt-3 space-y-1">
-                  <div>단말기 구매가 {formatMoney(carrierDevicePrice)}</div>
+                  <div>할인된 기기값 {formatMoney(carrierDevicePrice)}</div>
                   <div className="text-red-500 font-medium">+ 할부 이자 5.9% ({formatMoney(Math.floor(carrierInterest))})</div>
-                  <div>❗할부가 아닐 경우 할부 이자값을 제외하세요.</div>
                   <div>
                     + 요금제 통신비 {formatMoney(carrierPlanCost)}
                     {isCarrierContract && <span className="text-blue-500 text-xs ml-1">(선택약정 적용)</span>}
@@ -465,6 +430,7 @@ export default function PhoneCalculator() {
         input[type=number] {
           -moz-appearance: textfield;
         }
+        /* 체크박스 커스텀을 위한 유틸 */
         input[type="checkbox"] {
           accent-color: #2563eb;
         }
